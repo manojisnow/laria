@@ -1,0 +1,35 @@
+#!/bin/bash
+# Improved Docker run script with proper volume mounts for caches
+
+REPO_PATH="${1:-/path/to/target-repo}"
+
+echo "🐕 Running Laria Security Scanner"
+echo "Repository: $REPO_PATH"
+echo ""
+
+# Create cache directories on host
+mkdir -p $(pwd)/cache/trivy
+mkdir -p $(pwd)/cache/semgrep
+mkdir -p $(pwd)/cache/home
+
+# Check for local Maven cache
+M2_ARGS=""
+if [ -d "$HOME/.m2" ]; then
+    echo "📦 Detected local Maven cache, mounting..."
+    M2_ARGS="-v $HOME/.m2:/home/laria/.m2"
+fi
+
+# Mount repository to same path in container to preserve paths in reports
+docker run --rm \
+  --tmpfs /tmp:rw,exec,size=4g \
+  -v "$REPO_PATH:$REPO_PATH" \
+  -v $(pwd)/reports:/laria/reports \
+  -v $(pwd)/cache/trivy:/home/laria/.cache/trivy \
+  -v $(pwd)/cache/semgrep:/home/laria/.cache/semgrep \
+  -v $(pwd)/cache/home:/home/laria/.cache \
+  $M2_ARGS \
+  -e TRIVY_CACHE_DIR=/home/laria/.cache/trivy \
+  laria:latest "$REPO_PATH"
+
+echo ""
+echo "✅ Scan complete! Reports in: $(pwd)/reports"
