@@ -14,6 +14,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Load tool versions from versions.env
+        id: versions
+        run: |
+          args=""
+          while IFS='=' read -r key value; do
+            # Skip comments and blank lines
+            [[ "$key" =~ ^[[:space:]]*# || -z "${key// }" ]] && continue
+            args+="${key}=${value}"$'\n'
+          done < versions.env
+          echo "build_args<<EOF" >> $GITHUB_OUTPUT
+          echo "$args" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -40,6 +53,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ steps.versions.outputs.build_args }}
 
       - name: Update Docker Hub Description
         uses: peter-evans/dockerhub-description@v4
