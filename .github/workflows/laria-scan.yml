@@ -22,8 +22,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      - name: Load tool versions from versions.env
+        id: versions
+        run: |
+          args=""
+          while IFS='=' read -r key value; do
+            [[ "$key" =~ ^[[:space:]]*# || -z "${key// }" ]] && continue
+            args+="${key}=${value}"$'\n'
+          done < versions.env
+          echo "build_args<<EOF" >> $GITHUB_OUTPUT
+          echo "$args" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Build Laria
-        run: docker build -t laria:latest .
+        run: |
+          while IFS='=' read -r key value; do
+            [[ "$key" =~ ^[[:space:]]*# || -z "${key// }" ]] && continue
+            BUILD_ARGS+="--build-arg ${key}=${value} "
+          done < versions.env
+          docker build $BUILD_ARGS -t laria:latest .
       
       - name: Run Laria Security Scanner
         run: |
@@ -55,7 +72,7 @@ jobs:
             const report = JSON.parse(fs.readFileSync('reports/laria_report.json', 'utf8'));
             
             const summary = report.summary;
-            let comment = '## 🐕 Laria Security Scan Results\n\n';
+            let comment = '## 🛡️ Laria Security Scan Results\n\n';
             comment += '| Category | Critical | High | Medium | Low |\n';
             comment += '|----------|----------|------|--------|-----|\n';
             

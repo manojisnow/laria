@@ -9,7 +9,7 @@ FROM python:${PYTHON_BASE} AS base
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Tool version ARGs with defaults matching versions.env
-ARG SYFT_VERSION=1.9.0
+ARG SYFT_VERSION=1.42.0
 
 # Install system dependencies
 # hadolint ignore=DL3008
@@ -42,13 +42,13 @@ FROM base AS tools
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Re-declare ARGs for use in this stage
-ARG TRIVY_VERSION=0.58.0
-ARG GRYPE_VERSION=0.80.0
-ARG GITLEAKS_VERSION=8.18.1
+ARG TRIVY_VERSION=0.69.3
+ARG GRYPE_VERSION=0.108.0
+ARG GITLEAKS_VERSION=8.24.2
 ARG SEMGREP_VERSION=1.59.0
 ARG HADOLINT_VERSION=2.12.0
 ARG CHECKOV_VERSION=3.2.495
-ARG KUBESCAPE_VERSION=3.0.3
+ARG KUBESCAPE_VERSION=3.0.45
 ARG KUBEAUDIT_VERSION=0.22.1
 ARG HELM_VERSION=3.16.0
 ARG DEPENDENCY_CHECK_VERSION=9.0.7
