@@ -7,12 +7,43 @@ from typing import Dict, List, Any
 
 class ReportFormatter:
     """Formats scanner results into readable tables and sections"""
+
+    # A scanner that did not finish (the scanner wrappers return one of
+    # these in a `status` field) must never be presented as a clean result:
+    # a "No vulnerabilities found" over a failed run is false assurance (#1).
+    _INCOMPLETE_STATUSES = {'failed', 'timeout', 'error', 'not_installed', 'skipped'}
+
+    @staticmethod
+    def _trivy_scan_unavailable(trivy_data: Any) -> str:
+        """Why the vulnerability results cannot be trusted as a scan, or '' when they can.
+
+        A successful Trivy run is its own JSON (a `Results` member), or the
+        scanner wrapper's `{'findings': [], 'status': 'completed'}`. Anything
+        else — a `failed`/`timeout`/`not_installed`/`error` status, or input
+        with no `Results` member at all — is not a result, and must be said so
+        instead of reading as "no vulnerabilities found" (#1).
+        """
+        if not isinstance(trivy_data, dict):
+            return "Scan results unavailable"
+        status = str(trivy_data.get('status', '')).lower()
+        if status in ReportFormatter._INCOMPLETE_STATUSES:
+            return f"Scan did not complete — vulnerability results unavailable (status: {status})"
+        if status and status != 'completed':
+            return f"Scan did not complete — vulnerability results unavailable (status: {status})"
+        if 'Results' not in trivy_data and 'findings' not in trivy_data:
+            return "Scan results incomplete or invalid — vulnerability results unavailable"
+        return ""
     
     @staticmethod
     def format_trivy_results_markdown(trivy_data: Dict) -> str:
         """Format Trivy vulnerability results as Markdown tables"""
-        if not trivy_data or not isinstance(trivy_data, dict):
-            return "_No vulnerabilities found_\n"
+        unavailable = ReportFormatter._trivy_scan_unavailable(trivy_data)
+        if unavailable:
+            note = f"> ⚠ **{unavailable}**\n"
+            if isinstance(trivy_data, dict) and trivy_data.get('error'):
+                error = str(trivy_data['error']).replace('`', "'")[:300]
+                note += f">\n> `{error}`\n"
+            return note
         
         results = trivy_data.get('Results', [])
         if not results:
@@ -47,8 +78,13 @@ class ReportFormatter:
     @staticmethod
     def format_trivy_results_html(trivy_data: Dict) -> str:
         """Format Trivy vulnerability results as HTML tables"""
-        if not trivy_data or not isinstance(trivy_data, dict):
-            return "<p><em>No vulnerabilities found</em></p>"
+        unavailable = ReportFormatter._trivy_scan_unavailable(trivy_data)
+        if unavailable:
+            note = f'<p class="scan-failed"><strong>⚠ {unavailable}</strong>'
+            if isinstance(trivy_data, dict) and trivy_data.get('error'):
+                error = str(trivy_data['error']).replace('&', '&amp;').replace('<', '&lt;')[:300]
+                note += f'<br><code>{error}</code>'
+            return note + "</p>"
         
         results = trivy_data.get('Results', [])
         if not results:

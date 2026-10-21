@@ -96,6 +96,21 @@ class ReportGenerator:
 
 """
         
+        # Scans that did not complete (#1): their zero rows are unavailable
+        # results, not clean ones, and the executive summary must say so.
+        incomplete_scans = [
+            f"| **{category.title()}** | {entry.get('status_tool', 'scanner')} | `{entry['status']}` |"
+            for category, entry in summary.items()
+            if isinstance(entry, dict) and entry.get('status')
+        ]
+        if incomplete_scans:
+            md_content += (
+                "\n> ⚠ **Scans that did not complete — their rows read 0 because"
+                " results are unavailable, not because nothing was found.**\n\n"
+                "| Category | Scanner | Status |\n|---|---|---|\n"
+                + "\n".join(incomplete_scans) + "\n"
+            )
+        
         # Format specific scanners with custom formatters
         if 'secrets' in results and results['secrets']:
             md_content += "\n### SECRETS\n\n"
@@ -376,6 +391,9 @@ class ReportGenerator:
             </tbody>
         </table>
 
+        <!-- Scans that did not complete (#1) -->
+        {{ incomplete_scans_html }}
+
         <!-- Build Status -->
         {% if results.get('build') %}
         <h3 style="margin-top: 30px; margin-bottom: 15px;">Build Status</h3>
@@ -606,6 +624,31 @@ class ReportGenerator:
         except Exception as e:
             print(f"⚠️ Could not load logo: {e}")
         
+        # Scans that did not complete (#1): the zero rows they leave in the
+        # executive summary mean "results unavailable", not "nothing found".
+        incomplete_scans_html = ""
+        incomplete_scans = [
+            (category, entry)
+            for category, entry in summary.items()
+            if isinstance(entry, dict) and entry.get('status')
+        ]
+        if incomplete_scans:
+            rows = "".join(
+                f"<tr><td><strong>{category.title()}</strong></td>"
+                f"<td>{entry.get('status_tool', 'scanner')}</td>"
+                f"<td><code>{entry['status']}</code></td></tr>"
+                for category, entry in incomplete_scans
+            )
+            incomplete_scans_html = (
+                '<p class="scan-failed-note">⚠ <strong>Scans that did not complete —'
+                ' their rows read 0 because results are unavailable, not because nothing'
+                ' was found.</strong></p>'
+                '<table class="build-table" style="width: 100%; border-collapse: collapse;'
+                ' margin-bottom: 20px;">'
+                '<thead><tr><th>Category</th><th>Scanner</th><th>Status</th></tr></thead>'
+                f"<tbody>{rows}</tbody></table>"
+            )
+
         html_content = template.render(
             metadata=metadata,
             summary=summary,
@@ -614,6 +657,7 @@ class ReportGenerator:
             trivy_deps_html=trivy_deps_html,
             trivy_iac_html=trivy_iac_html,
             checkov_html=checkov_html,
+            incomplete_scans_html=incomplete_scans_html,
             logo_base64=logo_base64,
             logo_mime=mime_type
         )
@@ -727,5 +771,22 @@ class ReportGenerator:
                              summary['linting']['low'] += 1
             elif isinstance(lint_res, list):
                 summary['linting']['info'] += len(lint_res)
+
+        # Scan execution status per category (#1): a scanner that did not
+        # complete makes its zero counts mean "results unavailable", not
+        # "nothing found", and the summary must say which.
+        for category, tools in results.items():
+            if category not in summary or not isinstance(tools, (dict, list)):
+                continue
+            entries = tools.values() if isinstance(tools, dict) else tools
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                status = str(entry.get('status', '')).lower()
+                if status in {'failed', 'timeout', 'error', 'not_installed', 'skipped'}:
+                    summary[category]['status'] = status
+                    summary[category]['status_tool'] = str(
+                        entry.get('image') or 'scanner')
+                    break
 
         return summary

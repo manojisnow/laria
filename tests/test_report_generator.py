@@ -118,3 +118,79 @@ def test_generate_summary(mock_config):
     assert 'secrets' in summary
     assert 'sast' in summary
     assert all(key in summary['secrets'] for key in ['critical', 'high', 'medium', 'low', 'info'])
+
+
+def test_summary_marks_a_failed_scan(mock_config):
+    """#1: a failed scanner's zero counts must not read as a clean result."""
+    generator = ReportGenerator(mock_config)
+    results = {
+        'dependencies': {'trivy': {'status': 'failed', 'error': 'HTTP 429'}},
+    }
+    summary = generator._generate_summary(results)
+    assert summary['dependencies']['status'] == 'failed'
+    assert 'status' not in summary['secrets']  # nothing claimed about scans that did not run
+
+
+def test_markdown_executive_summary_names_the_failed_scan(mock_config, tmp_path):
+    """#1: the executive summary distinguishes a failed scan from a clean one."""
+    mock_config['reporting']['output_dir'] = str(tmp_path)
+    generator = ReportGenerator(mock_config)
+    results = {
+        'dependencies': {'trivy': {'status': 'failed', 'error': 'Maven repository returned HTTP 429'}},
+        'secrets': {'gitleaks': {'findings': [], 'status': 'completed'}},
+    }
+    metadata = {
+        'repo_path': '/test/repo',
+        'start_time': datetime.now(),
+        'end_time': datetime.now(),
+        'duration': 10.5,
+    }
+    generator.generate(results, metadata, 'markdown')
+    content = list(tmp_path.glob('laria_report_*.md'))[0].read_text()
+    assert "Scans that did not complete" in content
+    assert "results are unavailable, not because nothing was found" in content
+    assert "| **Dependencies** | scanner | `failed` |" in content
+
+
+def test_html_executive_summary_names_the_failed_scan(mock_config, tmp_path):
+    """#1: the HTML executive summary distinguishes a failed scan from a clean one."""
+    mock_config['reporting']['output_dir'] = str(tmp_path)
+    generator = ReportGenerator(mock_config)
+    results = {
+        'dependencies': {'trivy': {'status': 'failed', 'error': 'Maven repository returned HTTP 429'}},
+        'secrets': {'gitleaks': {'findings': [], 'status': 'completed'}},
+    }
+    metadata = {
+        'repo_path': '/test/repo',
+        'start_time': datetime.now(),
+        'end_time': datetime.now(),
+        'duration': 10.5,
+    }
+    generator.generate(results, metadata, 'html')
+    content = list(tmp_path.glob('laria_report_*.html'))[0].read_text()
+    assert "Scans that did not complete" in content
+    assert "results are unavailable" in content
+    assert "dependencies failed scan" not in content  # human words, not a code identifier
+
+
+def test_a_report_with_both_successful_and_failed_scanners(mock_config, tmp_path):
+    """#1: a clean scanner keeps its findings while a failed one is marked."""
+    mock_config['reporting']['output_dir'] = str(tmp_path)
+    generator = ReportGenerator(mock_config)
+    # gitleaks as the raw findings list the summary counts
+    results = {
+        'dependencies': {'trivy': {'status': 'failed', 'error': 'HTTP 429'}},
+        'secrets': {'gitleaks': [{'file': 'a.py', 'line': 1}]},
+    }
+    metadata = {
+        'repo_path': '/test/repo',
+        'start_time': datetime.now(),
+        'end_time': datetime.now(),
+        'duration': 10.5,
+    }
+    generator.generate(results, metadata, 'json')
+    import glob as glob_mod
+    report_path = sorted(glob_mod.glob(str(tmp_path / 'laria_report_*.json')))[0]
+    report = json.loads(open(report_path).read())
+    assert report['summary']['secrets']['high'] == 1
+    assert report['summary']['dependencies']['status'] == 'failed'
